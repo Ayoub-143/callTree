@@ -1,12 +1,12 @@
 /*
- * tui.c  –  ncurses front-end for calltree
+ * tui.c  - ncurses front-end for calltree
  *
  * Build:
  *   gcc -O2 -DCALLTREE_LIB -c -o calltree.o calltree.c
  *   gcc -O2 -o calltui tui.c calltree.o -lncurses
  *
  * Keys (file browser):
- *   ↑/↓ k/j    navigate
+ *   Up/Dn k/j    navigate
  *   Enter       enter directory
  *   Backspace   go up one directory
  *   Space       toggle file selection
@@ -15,7 +15,7 @@
  *   q           quit
  *
  * Keys (tree panel):
- *   ↑/↓ k/j    navigate nodes
+ *   Up/Dn k/j    navigate nodes
  *   Enter/Space toggle expand/collapse
  *   e           set entry point (opens prompt)
  *   +/-         increase/decrease max depth
@@ -36,13 +36,13 @@
 #include <unistd.h>
 #include "calltree.h"
 
-/* ── limits ───────────────────────────────────────────── */
+/* limits */
 #define MAX_FILES     1024
 #define MAX_PATH       512
 #define MAX_TREE_NODES 4096
 #define MAX_SEL_FILES  256
 
-/* ── colour pairs ─────────────────────────────────────── */
+/* colour pairs  */
 #define CP_NORMAL   1
 #define CP_SELECTED 2
 #define CP_HEADER   3
@@ -54,7 +54,7 @@
 #define CP_CYCLE    9
 #define CP_KEY     10
 
-/* ── file browser entry ───────────────────────────────── */
+/* file browser entry */
 typedef struct {
     char name[256];
     char fullpath[MAX_PATH];
@@ -62,7 +62,7 @@ typedef struct {
     int  selected;   /* only meaningful for files */
 } DirEntry;
 
-/* ── tree node ────────────────────────────────────────── */
+/* tree node  */
 typedef struct {
     char name[MAX_NAME];
     int  depth;
@@ -74,7 +74,7 @@ typedef struct {
     int  visible;
 } TreeNode;
 
-/* ── global state ─────────────────────────────────────── */
+/* global state */
 static char cwd[MAX_PATH];
 
 static DirEntry dir_entries[MAX_FILES];
@@ -100,7 +100,7 @@ static WINDOW *win_files;
 static WINDOW *win_tree;
 static WINDOW *win_status;
 
-/* ── helpers ──────────────────────────────────────────── */
+/* helpers */
 static int ends_with_c(const char *s)
 {
     size_t n = strlen(s);
@@ -189,7 +189,7 @@ static void select_all_c(void)
     }
 }
 
-/* ── tree builder ─────────────────────────────────────── */
+/* tree builder  */
 
 /* visited stack for cycle detection while building */
 static char vstack[MAX_TREE_NODES][MAX_NAME];
@@ -290,7 +290,7 @@ static int visible_count(void)
     return c;
 }
 
-/* ── parse & build ────────────────────────────────────── */
+/* parse & build  */
 static void do_parse(void)
 {
     ct_reset();
@@ -302,7 +302,7 @@ static void do_parse(void)
     active_panel = 1;
 }
 
-/* ── drawing ──────────────────────────────────────────── */
+/* drawing */
 static void draw_header(WINDOW *w, const char *title, int active)
 {
     int wide = getmaxx(w);
@@ -347,10 +347,10 @@ static void draw_files_panel(void)
 
         char line[256];
         if (e->is_dir)
-            snprintf(line, sizeof(line), " ▶ %s/", e->name);
+            snprintf(line, sizeof(line), " [d] %s/", e->name);
         else
             snprintf(line, sizeof(line), " %s %s",
-                     e->selected ? "●" : "○", e->name);
+                     e->selected ? "[*]" : "[ ]", e->name);
 
         mvwprintw(w, r+2, 0, "%-*.*s", cols, cols, line);
         wattroff(w, COLOR_PAIR(CP_CURSOR)|COLOR_PAIR(CP_SELECTED)|
@@ -371,10 +371,10 @@ static void draw_tree_prefix(WINDOW *w, int row, int col,
         wattron(w, COLOR_PAIR(CP_BRANCH));
         if (d == depth-1) {
             mvwprintw(w, row, col + d*3,
-                      is_last_child ? "└─ " : "├─ ");
+                      is_last_child ? "`- " : "|- ");
         } else {
             mvwprintw(w, row, col + d*3,
-                      last_at_depth[d] ? "   " : "│  ");
+                      last_at_depth[d] ? "   " : "|  ");
         }
         wattroff(w, COLOR_PAIR(CP_BRANCH));
     }
@@ -459,7 +459,7 @@ static void draw_tree_panel(void)
         int prefix_end = 1 + nd->depth * 3;
         if (nd->has_children && !nd->is_cycle && !nd->is_unknown) {
             wattron(w, COLOR_PAIR(CP_BRANCH));
-            mvwprintw(w, scr_row, prefix_end, nd->expanded ? "▼ " : "▶ ");
+            mvwprintw(w, scr_row, prefix_end, nd->expanded ? "v " : "> ");
             wattroff(w, COLOR_PAIR(CP_BRANCH));
         } else {
             mvwprintw(w, scr_row, prefix_end, "  ");
@@ -480,7 +480,7 @@ static void draw_tree_panel(void)
 
         /* annotation */
         if (nd->is_cycle)
-            wprintw(w, " ↺");
+            wprintw(w, " <cycle>");
         else if (nd->is_unknown)
             wprintw(w, " ?");
 
@@ -515,17 +515,17 @@ static void draw_status(const char *msg, int active_panel, int parsed, int nsel)
     } else if (active_panel == 0) {
         if (nsel == 0)
             mvwprintw(w, 0, 0, "%-*.*s", wide, wide,
-                "→ Space to select a file, then t + r to build the tree");
+                ">> Space to select a file, then t + r to build the tree");
         else
             mvwprintw(w, 0, 0, "%-*.*s", wide, wide,
-                "→ Press t then r to build the tree from your selection");
+                ">> Press t then r to build the tree from your selection");
     } else {
         if (!parsed)
             mvwprintw(w, 0, 0, "%-*.*s", wide, wide,
-                "→ Press f to pick files first, then come back and press r");
+                ">> Press f to pick files first, then come back and press r");
         else
             mvwprintw(w, 0, 0, "%-*.*s", wide, wide,
-                "→ f to pick different files  |  e to change entry function");
+                ">> f to pick different files  |  e to change entry function");
     }
     wattroff(w, COLOR_PAIR(CP_ENTRY) | A_BOLD);
 
@@ -574,7 +574,7 @@ static void draw_help(void)
     delwin(hw);
 }
 
-/* ── mini prompt (bottom of screen) ──────────────────── */
+/* mini prompt (bottom of screen) */
 static int prompt(const char *label, char *buf, int bufsz)
 {
     int rows = LINES;
@@ -596,7 +596,7 @@ static int prompt(const char *label, char *buf, int bufsz)
     return strlen(buf) > 0;
 }
 
-/* ── layout ───────────────────────────────────────────── */
+/* layout */
 static void create_windows(void)
 {
     int rows = LINES, cols = COLS;
@@ -625,7 +625,7 @@ static void resize_windows(void)
     create_windows();
 }
 
-/* ── event loop ───────────────────────────────────────── */
+/* event loop */
 int main(int argc, char **argv)
 {
     /* determine starting directory */
@@ -686,7 +686,7 @@ int main(int argc, char **argv)
 
         status = NULL;  /* clear transient message on next keypress */
 
-        /* ── file panel keys ── */
+        /* ?? file panel keys ?? */
         if (active_panel == 0) {
             if (ch == 'q') break;
 
@@ -735,7 +735,7 @@ int main(int argc, char **argv)
                 else { do_parse(); status = "Parsed."; }
             }
 
-        /* ── tree panel keys ── */
+        /* ?? tree panel keys ?? */
         } else {
             if (ch == 'q') break;
 

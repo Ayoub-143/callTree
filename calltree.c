@@ -57,14 +57,28 @@ static void add_call(Func *caller, const char *callee)//new call, who dis?
 
 // keywords that look like calls
 static const char *KW[] = {
+    /* C keywords */
     "if","else","for","while","do","switch","case","return",
     "sizeof","typeof","__typeof__","offsetof","goto","break",
     "continue","typedef","struct","union","enum","static",
     "extern","inline","const","volatile","register","auto",
     "int","char","short","long","unsigned","signed","void",
     "float","double","bool","NULL",
+    /* C++ keywords */
+    "catch","try","throw","new","delete","class","namespace",
+    "using","this","operator","template","typename","public",
+    "private","protected","virtual","override","final",
+    "explicit","friend","mutable","constexpr","consteval",
+    "constinit","noexcept","nullptr","static_assert",
+    "static_cast","dynamic_cast","reinterpret_cast","const_cast",
+    "and","or","not","xor","bitand","bitor","compl",
+    "and_eq","or_eq","xor_eq","not_eq",
+    "true","false","export","import","module","co_await",
+    "co_return","co_yield","requires","concept","decltype",
+    "alignas","alignof","typeid","thread_local",
     NULL
 };
+
 static int is_kw(const char *w)//keyword check
 {
     for (int i = 0; KW[i]; i++) if (!strcmp(KW[i],w)) return 1;
