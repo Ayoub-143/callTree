@@ -145,32 +145,110 @@ static void scrub(char *s, size_t n) //a "comments remover" by ai too cuz look a
     }
 }
 
-static void parse_buf(const char *buf, size_t n) //the parser with depth detection
+/* block kinds tracked on the brace stack, so namespace/class bodies
+ * don't get mistaken for function bodies (and so calls inside them
+ * still get attributed to the right enclosing function, or none) */
+#define BLK_OTHER     0   /* if/for/while/switch/lambda/unknown block */
+#define BLK_NAMESPACE 1
+#define BLK_CLASS     2   /* class/struct/union/enum body */
+#define BLK_FUNC      3
+
+#define MAX_PARSE_DEPTH 512
+
+static void parse_buf(const char *buf, size_t n) //the parser with depth + namespace/class detection
 {
     int   depth   = 0;
     Func *cur     = NULL;
-    char  cand[MAX_NAME] = "";
+    char  cand[MAX_NAME] = "";   /* candidate function name (leaf, unqualified) */
+
+    int   blocktype[MAX_PARSE_DEPTH];
+    Func *saved_cur[MAX_PARSE_DEPTH];
+    blocktype[0] = BLK_OTHER;
+    saved_cur[0] = NULL;
+
+    /* what kind of block the *next* '{' should open, based on the
+     * most recently seen leading keyword (namespace/class/struct/union) */
+    int pending_blk = BLK_OTHER;
+
+    /* paren tracking, so we can recognize a ctor member-initializer
+     * list: "Note(...) : id(id), subject(subject) {" — once we've
+     * closed a candidate's own parameter list and see a lone ':'
+     * (not '::') right after, everything up to the '{' is init-list
+     * entries like "id(id)", not a new function candidate. */
+    int  paren_depth = 0;
+    int  in_init_list = 0;
 
     size_t i = 0;
     while (i < n) {
         char c = buf[i];
 
-        if (c == '{') {
-            depth++;
-            if (depth == 1 && cand[0]) {
-                cur = get_or_add(cand);
-                cand[0] = '\0';
+        if (c == '(') {
+            paren_depth++;
+            i++; continue;
+        }
+        if (c == ')') {
+            if (paren_depth > 0) paren_depth--;
+            if (paren_depth == 0 && cand[0] && cur == NULL && !in_init_list) {
+                size_t k = i+1;
+                while (k < n && (buf[k]==' '||buf[k]=='\t'||buf[k]=='\n'||buf[k]=='\r')) k++;
+                if (k < n && buf[k] == ':' && !(k+1 < n && buf[k+1] == ':'))
+                    in_init_list = 1;
             }
             i++; continue;
         }
-        if (c == '}') {
-            if (depth > 0) depth--;
-            if (depth == 0) cur = NULL;
+        if (c == '{') {
+            int newtype = BLK_OTHER;
+            if (pending_blk != BLK_OTHER) {
+                newtype = pending_blk;
+            } else if (cand[0] && cur == NULL) {
+                newtype = BLK_FUNC;
+            }
+
+            if (depth + 1 < MAX_PARSE_DEPTH) depth++;
+            blocktype[depth] = newtype;
+            saved_cur[depth]  = cur;
+
+            if (newtype == BLK_FUNC) {
+                cur = get_or_add(cand);
+            }
+            /* BLK_NAMESPACE / BLK_CLASS / BLK_OTHER: leave cur as-is,
+             * so calls inside namespaces/classes-without-a-func, or
+             * inside nested if/for/lambda blocks, attribute correctly */
+
+            cand[0] = '\0';
+            pending_blk = BLK_OTHER;
+            in_init_list = 0;
             i++; continue;
         }
-        if (c == ';' && depth == 0) {
+        if (c == '}') {
+            if (depth > 0) {
+                int type = blocktype[depth];
+                if (type == BLK_FUNC) cur = saved_cur[depth];
+                depth--;
+            } else {
+                cur = NULL;
+            }
             cand[0] = '\0';
+            in_init_list = 0;
             i++; continue;
+        }
+        if (c == ';') {
+            if (cur == NULL) cand[0] = '\0';
+            pending_blk = BLK_OTHER;
+            in_init_list = 0;
+            i++; continue;
+        }
+
+        /* "::" scope resolution – just skip over it. Functions are keyed
+         * by their leaf name (e.g. "paint" for both "Widget::paint(){...}"
+         * and a call made as "w.paint()" or "Widget::paint()"), so a
+         * definition and its call sites always agree on the name. Do NOT
+         * clear `cand` here: "::" also shows up in unrelated type names
+         * inside a signature (e.g. "const std::string& x"), and clearing
+         * would wipe out an already-captured function-name candidate
+         * before its "{" is ever reached. */
+        if (c == ':' && i+1 < n && buf[i+1] == ':') {
+            i += 2; continue;
         }
 
         if (is_idc(c)) {
@@ -179,13 +257,25 @@ static void parse_buf(const char *buf, size_t n) //the parser with depth detecti
                 word[wlen++] = buf[i++];
             word[wlen] = '\0';
 
+            if (!strcmp(word, "namespace")) {
+                pending_blk = BLK_NAMESPACE;
+                cand[0] = '\0';
+                continue;
+            }
+            if (!strcmp(word,"class") || !strcmp(word,"struct") ||
+                !strcmp(word,"union") || !strcmp(word,"enum")) {
+                pending_blk = BLK_CLASS;
+                cand[0] = '\0';
+                continue;
+            }
+
             size_t j = i;
             while (j < n && (buf[j]==' '||buf[j]=='\t'||buf[j]=='\n'||buf[j]=='\r')) j++;
 
             if (j < n && buf[j] == '(') {
-                if (depth == 0 && !is_kw(word)) {
+                if (cur == NULL && !in_init_list && !is_kw(word)) {
                     strncpy(cand, word, MAX_NAME-1);
-                } else if (depth >= 1 && cur && !is_kw(word)) {
+                } else if (cur && !is_kw(word)) {
                     add_call(cur, word);
                 }
             }
