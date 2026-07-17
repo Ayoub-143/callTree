@@ -8,6 +8,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
 
@@ -79,13 +80,13 @@ static const char *KW[] = {
     NULL
 };
 
-static int is_kw(const char *w)//keyword check
+static bool is_kw(const char *w)//keyword check
 {
-    for (int i = 0; KW[i]; i++) if (!strcmp(KW[i],w)) return 1;
-    return 0;
+    for (int i = 0; KW[i]; i++) if (!strcmp(KW[i],w)) return true;
+    return false;
 }
 
-static int is_idc(char c) { return isalnum((unsigned char)c)||c=='_'; }
+static bool is_idc(char c) { return isalnum((unsigned char)c)||c=='_'; }
 
 // tokeniser by ai
 static char *read_file(const char *path, size_t *outsz)
